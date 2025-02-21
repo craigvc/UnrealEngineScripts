@@ -5,6 +5,7 @@ import threading
 import os
 import json
 import platform
+import shlex  # Import for safely handling shell arguments
 
 CONFIG_FILE = "config.json"
 
@@ -51,41 +52,48 @@ def update_engine_version(plugin_path, ue_version):
         messagebox.showerror("Error", f"Failed to update engine version: {e}")
 
 def run_command():
-    ue_root = ue_root_var.get()
-    source_plugin = source_var.get()
-    target_folder = target_var.get()
-    target_platform = platform_var.get()
+    ue_root = ue_root_var.get().strip()
+    source_plugin = source_var.get().strip()
+    target_folder = target_var.get().strip()
+    target_platform = platform_var.get().strip()
     additional_flags = []
-    
+
     if clean_var.get():
         additional_flags.append("-Clean")
     if no_compile_var.get():
         additional_flags.append("-NoCompile")
     if verbose_var.get():
         additional_flags.append("-Verbose")
-    
+
     if not ue_root or not source_plugin or not target_folder or not target_platform:
         messagebox.showerror("Error", "Please fill in all required fields.")
         return
-    
+
     uat_script = "RunUAT.bat" if platform.system() == "Windows" else "RunUAT.sh"
     uat_path = os.path.join(ue_root, "Engine", "Build", "BatchFiles", uat_script)
-    
+
     if platform.system() != "Windows":
         subprocess.run(["chmod", "+x", uat_path], check=False)
-    
-    command = [uat_path, "BuildPlugin",
-               f"-Plugin={source_plugin}",
-               f"-Package={target_folder}",
-               f"-TargetPlatforms={target_platform}",
-               *additional_flags]
-    
+
+    # Properly format command to avoid double quotes
+    command = [
+        uat_path,
+        "BuildPlugin",
+        f"-Plugin={shlex.quote(source_plugin)}",
+        f"-Package={shlex.quote(target_folder)}",
+        f"-TargetPlatforms={shlex.quote(target_platform)}",
+        *additional_flags
+    ]
+
     save_config()
     update_engine_version(source_plugin, os.path.basename(ue_root))
     output_text.delete(1.0, tk.END)
-    
+
     def execute():
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=True, cwd=os.path.dirname(uat_path))
+        output_text.insert(tk.END, f"Executing: {' '.join(command)}\n")
+        output_text.see(tk.END)
+
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, shell=False, cwd=os.path.dirname(uat_path))
         for line in process.stdout:
             output_text.insert(tk.END, line)
             output_text.see(tk.END)
@@ -93,7 +101,7 @@ def run_command():
             output_text.insert(tk.END, line, "error")
             output_text.see(tk.END)
         process.wait()
-    
+
     threading.Thread(target=execute, daemon=True).start()
 
 def browse_ue_root():
